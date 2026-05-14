@@ -6,6 +6,7 @@ services:
     buildCommand: |
       apt-get install -y tesseract-ocr &&
       pip install -r requirements.txt &&
+      python train_model.py
       if [ ! -f model/form_classifier.pkl ]; then
         echo "Model not found, training now..." &&
         python train_model.py
