@@ -7,7 +7,9 @@ services:
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: "3.11.0"
+      - key: POETRY_VERSION
+        value: "none"
 
   - type: static
     name: ai-form-detector-frontend
@@ -16,6 +18,6 @@ services:
     staticPublishPath: build
     envVars:
       - key: NODE_VERSION
-        value: 18.0.0
+        value: "18.0.0"
       - key: REACT_APP_API_URL
         value: https://ai-form-type-detector.onrender.com
