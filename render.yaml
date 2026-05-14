@@ -3,15 +3,19 @@ services:
     name: ai-form-detector-backend
     runtime: python
     rootDir: backend
-    buildCommand: |
-      apt-get install -y tesseract-ocr &&
-      pip install -r requirements.txt &&
-      python train_model.py
-      if [ ! -f model/form_classifier.pkl ]; then
-        echo "Model not found, training now..." &&
-        python train_model.py
-      fi
+    buildCommand: pip install -r requirements.txt && python train_model.py
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+
+  - type: static
+    name: ai-form-detector-frontend
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: NODE_VERSION
+        value: 18.0.0
+      - key: REACT_APP_API_URL
+        value: https://ai-form-type-detector.onrender.com
