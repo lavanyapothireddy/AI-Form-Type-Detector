@@ -1,89 +1,45 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import shutil
+import joblib
 import os
 
-from form_detector import detect_form_type
-from ocr_utils import extract_text_from_image, extract_text_from_pdf
+# Lazy-load model to avoid crash on import if model file doesn't exist yet
+_model = None
 
-app = FastAPI(title="AI Form Type Detector API")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+MODEL_PATH = os.environ.get("MODEL_PATH", "model/form_classifier.pkl")
 
 
-class TextInput(BaseModel):
-    text: str
-
-
-@app.get("/")
-def home():
-    return {"message": "AI Form Type Detector API", "status": "running"}
-
-
-@app.post("/detect-text")
-async def detect_text(data: TextInput):
-    text = data.text.strip()
-    if not text:
-        raise HTTPException(status_code=400, detail="Text cannot be empty")
-    try:
-        result = detect_form_type(text)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
-
-
-@app.post("/detect-file")
-async def detect_file(file: UploadFile = File(...)):
-    allowed_extensions = (".png", ".jpg", ".jpeg", ".pdf")
-    filename = file.filename or ""
-
-    if not filename.lower().endswith(allowed_extensions):
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported file format. Please upload PNG, JPG, JPEG, or PDF."
-        )
-
-    file_path = os.path.join(UPLOAD_FOLDER, filename)
-
-    try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        extracted_text = ""
-
-        if filename.lower().endswith((".png", ".jpg", ".jpeg")):
-            extracted_text = extract_text_from_image(file_path)
-        elif filename.lower().endswith(".pdf"):
-            extracted_text = extract_text_from_pdf(file_path)
-
-        if not extracted_text.strip():
-            raise HTTPException(
-                status_code=422,
-                detail="No text could be extracted from the file."
+def _get_model():
+    global _model
+    if _model is None:
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(
+                f"Model file not found at '{MODEL_PATH}'. "
+                "Please run train_model.py first to generate the model."
             )
+        _model = joblib.load(MODEL_PATH)
+    return _model
 
-        result = detect_form_type(extracted_text)
 
-        return {
-            "extracted_text": extracted_text,
-            "prediction": result
-        }
+def detect_form_type(text: str) -> dict:
+    model = _get_model()
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")
-    finally:
-        # Clean up uploaded file
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    prediction = model.predict([text])[0]
+    probabilities = model.predict_proba([text])[0]
+    confidence = float(max(probabilities)) * 100
+
+    # Get top-3 predictions with confidence scores
+    classes = model.classes_
+    class_probs = sorted(
+        zip(classes, probabilities),
+        key=lambda x: x[1],
+        reverse=True
+    )
+    top_predictions = [
+        {"form_type": cls, "confidence": round(float(prob) * 100, 2)}
+        for cls, prob in class_probs[:3]
+    ]
+
+    return {
+        "form_type": str(prediction),
+        "confidence": round(confidence, 2),
+        "top_predictions": top_predictions
+    }
